@@ -6,25 +6,29 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-#include <includes.h>
+//#include <includes.h>
 
+//#include <sfl.h>
+#include <openssl/ec.h>
+#include <openssl/ecdsa.h>   // for ECDSA_do_sign, ECDSA_do_verify
+#include <openssl/obj_mac.h> // for NID_secp192k1
+#include <openssl/sha.h>
+#include <arpa/inet.h> 
 #include <x509_cache.h>
 #include <x509_cache_flash.h>
 #include <asn.h>
-#include <sfl.h>
-#include <x509_cache_flash.h>
-
-#define TASK_PRIO       TEST_TASK_PRIORITY
+//#define TASK_PRIO       TEST_TASK_PRIORITY
 #define TASK_STK_SIZE   4096
 
-static OS_STK task_stk[TASK_STK_SIZE];
+//static OS_STK task_stk[TASK_STK_SIZE];
 
+EC_KEY a,b;
 
-#define ELLIPTIC
+//#define ELLIPTIC
 
 #ifdef ELLIPTIC
-#include <elpsoft.h>
-#include <assert.h>
+//#include <elpsoft.h>
+//#include <assert.h>
 extern const elpprng_plugin sys_prng;
 #endif
 
@@ -136,9 +140,9 @@ uint8_t der_cert[] = {
     0x1d,0x82,0xee,0xe4,0xa1,0x91,0xc2,0x79,0x3b,0x06 
 };
 
-int8_t *line;
+int8_t *line[512];
 
-char *commands[] = {
+/*char *commands[] = {
 	"editbuf role 2",
 	"#root1",
 	"editbuf serial *a1",
@@ -297,13 +301,13 @@ char *commands[] = {
     "print_index",
     NULL
 };
-
+*/
 #ifdef ELLIPTIC
 typedef elpecc_key ECKEY;
 #endif
 
-ECKEY *ram_cert_eckey;
-ECKEY eckey1, eckey2; 
+EC_KEY *ram_cert_eckey;
+EC_KEY eckey1, eckey2; 
 
 #define KEY_STORE_SIZE 128
 uint8_t auto_serial = 1;
@@ -315,7 +319,7 @@ struct ec_key_store {
     uint8_t subjkeyid[CERT_ELEMENT_MAXLEN_SUBJKEYID];
     uint8_t authkeyid[CERT_ELEMENT_MAXLEN_AUTHKEYID];
     uint8_t slot_no;
-    ECKEY eckey;
+    EC_KEY *eckey;
     uint8_t pubkey[CERT_ELEMENT_MAXLEN_PUBKEY];
 } key_store[KEY_STORE_SIZE];
 
@@ -521,7 +525,7 @@ static uint8_t sign_cert(CertBuffer *pcert, ECKEY *eckey,
 #endif
 
 static void add_keypair_to_store(uint8_t *serialNumber, uint8_t *subject,
-                          ECKEY *eckey,uint8_t *pubkey, uint8_t *subjkeyid )
+                          EC_KEY *eckey,uint8_t *pubkey, uint8_t *subjkeyid )
 {
     uint8_t i,found=0;
 
@@ -547,12 +551,20 @@ static void add_keypair_to_store(uint8_t *serialNumber, uint8_t *subject,
              CERT_ELEMENT_MAXLEN_SUBJECT); 
     memcpy(&(key_store[i].subjkeyid), subjkeyid,
              CERT_ELEMENT_MAXLEN_SUBJKEYID); 
-    key_store[i].eckey = *eckey;
+    //key_store[i].eckey = *eckey;
+   key_store[i].eckey = eckey;
     memcpy(key_store[i].pubkey,pubkey,sizeof(key_store[i].pubkey));
     key_store[i].valid = VALID; 
 }
 
 extern struct cache_index cache_index;
+struct CertBuffer ce;
+extern uint8_t used_list_head;
+extern uint8_t free_list_head;
+//extern struct _mc_list used_list[TOTAL_CERT_SLOTS];
+//extern struct _mc_list free_list[TOTAL_CERT_SLOTS];
+
+
 
 static void sync_keypair_with_cache(void)
 {
@@ -641,7 +653,7 @@ static void update_slotno_to_store(uint8_t *serialNumber, uint8_t slot_no)
     }
 }
 
-static uint8_t get_keypair_from_store(uint8_t *serialNumber, ECKEY *eckey,
+static uint8_t get_keypair_from_store(uint8_t *serialNumber, EC_KEY **eckey,
                              uint8_t **pubkey, uint8_t *subject)
 {
     uint8_t i;
@@ -1084,7 +1096,8 @@ static error_t parse_der_cert(CertBuffer *ram_cert)
 static char *get_next_command(void)
 {
     static uint16_t curr_cmd = 0;
-    return commands[curr_cmd++];
+	return NULL;
+    //return commands[curr_cmd++];
 }
 
 #define CMD_FAILED  1
@@ -1102,15 +1115,36 @@ int test_init(int *exit_code)
 
 static void process_token(char *token);
 
-int x509cache_tests(int *exit_code)
+int main(int argc,char*argv[])
 {
     uint8_t i;
-
-    printf("start x509cache test...\n");
+	FILE *fp = NULL;
+ uint8_t done = 0, prompt = 0;
+   // printf("start x509cache test...\n");
     //nxp_init();
-    elp_mp = elpmath_desc;
+   // elp_mp = elpmath_desc;
     //libret = nxp_power_control(1);
-    prompt = 0;
+
+    //prompt = 0;
+libret = mc_cache_init();
+    if (libret != ERR_OK) {
+        printf("Error initializing cert Cache. error %d\n", libret);
+    }    
+
+    if (argv[1]) {
+        if (!strcmp(argv[1],"help")) {
+            help();
+            return 0;
+        }
+        fp = fopen(argv[1],"r");
+        if (fp == NULL) {
+            printf("Cannot open input file. %s\n", argv[1]);
+            return 1;
+        }    
+    }    
+    else 
+        prompt = 1;
+
 
     libret = parse_der_cert(&ram_cert);
     if (libret != ERR_OK) {
@@ -1119,13 +1153,21 @@ int x509cache_tests(int *exit_code)
     }
 
     //initialize the variable valid to INVALID in key_store
-    for(i=0;i < KEY_STORE_SIZE;i++)
-        key_store[i].valid = INVALID;
+    //for(i=0;i < KEY_STORE_SIZE;i++)
+      //  key_store[i].valid = INVALID;
 
     while (!done){
         if (!prompt) {
-            if ( (libret != ERR_OK && expected_result == RESULT_PASS) ||
-                 (libret == ERR_OK && expected_result == RESULT_FAIL) ) {
+            if (!fgets((char *)line,512,fp)) {
+                done = 1; 
+                continue;
+            }
+        }
+        else {
+            printf("==> ");fflush(stdout);
+            fgets((char *)line, 512,stdin);
+        }
+            /*if ( (libret != ERR_OK && expected_result == RESULT_PASS) ||
                 //a test failed.
                 clear_ec_key_store();
                 cache_uninit();
@@ -1141,13 +1183,15 @@ int x509cache_tests(int *exit_code)
             //show prompt
             printf("==> ");
             //TODO read command from stdin to line
-        }
+        }*/
         if (line == NULL) continue;
         lc++;
         if (line[0] == '#' || line[0] == '\n') continue;
 
         if (!prompt) {
-                printf("[cmd%03d] %s => ",++cmdcount,line);
+	  if (!strstr((char *)line,"print "))
+                printf("==> %s", line);
+              //  printf("[cmd%03d] %s => ",++cmdcount,line);
         }
 
         //process this line
@@ -1162,7 +1206,7 @@ int x509cache_tests(int *exit_code)
     cache_uninit();
 
     printf("All done.\n");
-    *exit_code = 0;
+   // *exit_code = 0;
     return 1;
 }
 
@@ -1536,9 +1580,10 @@ inline static void print_sign_command_usage(void)
     printf("sign self | (using serial <8-octets>|*<octet>)\n");
 }
 
+EC_KEY signer_key;
 static void process_token_sign(char *token)
 {
-    ECKEY signer_key;
+    //EC_KEY signer_key;
     uint8_t *signer_pubkey = NULL,*issuer_subjkeyid;
     uint8_t serial[CERT_ELEMENT_MAXLEN_SERIALNO];
     uint8_t subject[CERT_ELEMENT_MAXLEN_ISSUER];
@@ -1603,6 +1648,8 @@ static void process_token_sign(char *token)
     }
 }
 
+//EC_KEY signer_key;
+EC_KEY eckey;
 static void process_token_addmany(char *token)
 {
     uint16_t range;
@@ -1610,7 +1657,7 @@ static void process_token_addmany(char *token)
     uint8_t serial[CERT_ELEMENT_MAXLEN_SERIALNO];
     uint8_t issuer[CERT_ELEMENT_MAXLEN_ISSUER];
     uint8_t subject[CERT_ELEMENT_MAXLEN_ISSUER];
-    ECKEY signer_key;
+    //EC_KEY signer_key;
     uint8_t *signer_pubkey = NULL,*issuer_subjkeyid;	
     uint8_t nl = 1,i; 
 
@@ -1635,7 +1682,7 @@ static void process_token_addmany(char *token)
         token = get_next_token((char *)line);
         if(!strcmp(token,"serial"))
         {
-            ECKEY eckey;
+            //EC_KEY eckey;
             uint8_t pubkey[CERT_ELEMENT_MAXLEN_PUBKEY];
             token = get_next_token((char *)line);
             for(i=0;i<range;i++){
@@ -1852,7 +1899,7 @@ static void process_token(char *token)
         token = get_next_token((char *)line);
     }
 }
-
+/*
 int test_loop(void)
 {   
     int exit_val;
@@ -1880,4 +1927,4 @@ test_task_create(void)
                 TASK_PRIO, TASK_STK_SIZE);
   
     return (0);
-} 
+}*/ 
