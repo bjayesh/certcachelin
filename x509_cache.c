@@ -9,13 +9,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <x509_cache.h>
+#include "x509_cache.h"
 #include "assert.h"
 #include "x509_cache_flash.h"
 #include "cert_misc.h"
-#include "os_cpu.h"
+//#include "os_cpu.h"
 #include "x509cacheinternal.h"
-
+#include<pthread.h>
 /**
  *  Cache structure
  *  Number of items in the cache is fixed.
@@ -221,13 +221,16 @@ static error_t cache_compare_certs(INOUT CertBuffer *pCert1, IN const CertBuffer
 API error_t cache_init()
 {
     uint16_t i,out_len;
+	uint16_t *temp;
     uint8_t ret;
 
+	temp=&out_len;
     ret = cache_mutex_init();
     if (ret != ERR_OK) {
         return ERR_CACHE_GEN_ERROR;
     }
-    ret = cert_cache_read_index(&cache_index, sizeof(cache_index), &out_len);
+    //ret = cert_cache_read_index(&cache_index, sizeof(cache_index), &out_len);
+    ret = cert_cache_read_index(&cache_index, sizeof(cache_index), temp);
     if (out_len == 0 || ret != ERR_OK) {
         /* Initialize used and free lists */
         cache_index.used_list_head = LIST_END_MARKER;
@@ -1008,7 +1011,10 @@ API error_t cache_get_issuer_slot(const uint16_t child_slot, uint16_t *parent_sl
 }
 
 static CertBuffer *cert_buffers;
-OS_CPU_SR cpu_sr;
+//OS_CPU_SR cpu_sr;
+pthread_mutex_t cert_buffer_lock;
+pthread_mutex_t cert_buffer_lock=PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_init(&cert_buffer_lock,NULL);
 #define NOINLINE  __attribute__((noinline))
 #define NUM_CERT_BUFFERS 6
 
@@ -1016,22 +1022,27 @@ void
 cert_buffer_release(CertBuffer *cb)
 {
     assert(cb);
-    OS_ENTER_CRITICAL();
+//    OS_ENTER_CRITICAL();
+pthread_mutex_lock(&cert_buffer_lock);
     cb->dc.source = (uint8_t *)cert_buffers;
     cert_buffers = cb; 
-    OS_EXIT_CRITICAL();
+    //OS_EXIT_CRITICAL();
+pthread_mutex_unlock(&cert_buffer_lock);
 }
 
 CertBuffer *
 cert_buffer_get(void)
 {
-    OS_ENTER_CRITICAL();
+//    OS_ENTER_CRITICAL();
+//pthread_mutex_lock(&cert_buffer_lock);
+pthread_mutex_lock(&cert_buffer_lock);
     CertBuffer *cb = cert_buffers;
     if (cb) {
         cert_buffers = (CertBuffer *)cb->dc.source;
     }   
-    assert(cb);
-    OS_EXIT_CRITICAL();
+  //  assert(cb);
+//    OS_EXIT_CRITICAL();
+pthread_mutex_unlock(&cert_buffer_lock);
     return cb; 
 }
 

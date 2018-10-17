@@ -18,6 +18,7 @@
 #include "types.h"
 #include "asn_public.h"   /* public interface */
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef HAVE_ECC
     #include "ecc.h"

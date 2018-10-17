@@ -4,14 +4,14 @@
  *
  * $Id: cert_setflags.c 127833 2018-08-14 14:40:12Z jbabu $
  */
-#include <libc/include/string.h>
-#include <mac_addr.h>
+//#include <libc/include/string.h>
+//#include <mac_addr.h>
 #include <x509_cache.h>
 #include <sha256.h>
 #include "assert.h"
 
 #define NOINLINE  __attribute__((noinline))
-
+#define MAC_ADDR_LEN 8
 #ifdef REMOVE
 #ifndef MAX_UINT
 #define MAX_UINT 0x7fffffff

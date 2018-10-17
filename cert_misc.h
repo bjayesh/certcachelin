@@ -2,7 +2,7 @@
  * $Id $
  * Copyright 2018 iTron Network Solutions, Inc.  
  */
-#include <asn.h>
+#include "asn.h"
 #include <errors.h>
 
 error_t cert_is_signed_by(const DecodedCert *subj, const DecodedCert *issuer);

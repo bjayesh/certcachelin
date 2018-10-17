@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (c) 2017 Itron Inc.
  * All rights reserved.
  */
@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 //#include <includes.h>
 
 //#include <sfl.h>
@@ -19,10 +20,14 @@
 #include <asn.h>
 //#define TASK_PRIO       TEST_TASK_PRIORITY
 #define TASK_STK_SIZE   4096
+#include <openssl/opensslv.h>
+
 
 //static OS_STK task_stk[TASK_STK_SIZE];
 
-EC_KEY a,b;
+error_t cache_init();
+static int8_t create_new_ec_key_pair(EC_KEY **eckey, uint8_t *pubkey);
+static uint8_t sign_cert(CertBuffer *pcert, EC_KEY *eckey, uint8_t *pubkey,uint8_t *issuer,uint8_t *authkeyid);
 
 //#define ELLIPTIC
 
@@ -98,7 +103,7 @@ char *g_strtok_strptr;
 static CertBuffer ram_cert;
 static CertBuffer certbuf;
 
-uint8_t der_cert[] = {  
+/*uint8_t der_cert[] = {  
     0x30,0x82,0x02,0x66,0x30,0x82,0x02,0x0d,0xa0,0x03,0x02,0x01,0x02,0x02,0x09,0x00,
     0xfc,0xb8,0xb3,0x15,0x22,0x15,0x91,0x96,0x30,0x09,0x06,0x07,0x2a,0x86,0x48,0xce,
     0x3d,0x04,0x01,0x30,0x64,0x31,0x0b,0x30,0x09,0x06,0x03,0x55,0x04,0x06,0x13,0x02,
@@ -138,9 +143,52 @@ uint8_t der_cert[] = {
     0x8e,0xb9,0x54,0xaa,0x94,0xbb,0xf8,0x02,0x21,0x00,0xf9,0xb6,0xc6,0x13,0x18,0x32,
     0xa6,0x5a,0x72,0x5b,0xdd,0x71,0xc6,0x17,0x0c,0x69,0xa8,0xc0,0xa2,0xd7,0xc4,0x18,
     0x1d,0x82,0xee,0xe4,0xa1,0x91,0xc2,0x79,0x3b,0x06 
-};
+};*/
+uint8_t der_cert[] = {
+    0x30,0x82,0x02,0x66,0x30,0x82,0x02,0x0d,0xa0,0x03,0x02,0x01,0x02,0x02,0x09,0x00,
+    0xfc,0xb8,0xb3,0x15,0x22,0x15,0x91,0x96,0x30,0x09,0x06,0x07,0x2a,0x86,0x48,0xce,
+    0x3d,0x04,0x01,0x30,0x64,0x31,0x0b,0x30,0x09,0x06,0x03,0x55,0x04,0x06,0x13,0x02,
+    0x6e,0x65,0x31,0x0b,0x30,0x09,0x06,0x03,0x55,0x04,0x08,0x0c,0x02,0x6e,0x65,0x31,
+    0x0b,0x30,0x09,0x06,0x03,0x55,0x04,0x07,0x0c,0x02,0x6e,0x65,0x31,0x0b,0x30,0x09,
+    0x06,0x03,0x55,0x04,0x0a,0x0c,0x02,0x6e,0x65,0x31,0x0b,0x30,0x09,0x06,0x03,0x55,
+    0x04,0x0b,0x0c,0x02,0x6e,0x65,0x31,0x0b,0x30,0x09,0x06,0x03,0x55,0x04,0x03,0x0c,
+    0x02,0x6e,0x65,0x31,0x14,0x30,0x12,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,
+    0x09,0x01,0x16,0x05,0x6e,0x65,0x40,0x6e,0x65,0x30,0x1e,0x17,0x0d,0x31,0x38,0x30,
+    0x34,0x30,0x36,0x31,0x34,0x34,0x31,0x31,0x32,0x5a,0x17,0x0d,0x32,0x38,0x30,0x34,
+    0x30,0x33,0x31,0x34,0x34,0x31,0x31,0x32,0x5a,0x30,0x64,0x31,0x0b,0x30,0x09,0x06,
+    0x03,0x55,0x04,0x06,0x13,0x02,0x6e,0x65,0x31,0x0b,0x30,0x09,0x06,0x03,0x55,0x04,
+    0x08,0x0c,0x02,0x6e,0x65,0x31,0x0b,0x30,0x09,0x06,0x03,0x55,0x04,0x07,0x0c,0x02,
+    0x6e,0x65,0x31,0x0b,0x30,0x09,0x06,0x03,0x55,0x04,0x0a,0x0c,0x02,0x6e,0x65,0x31,
+    0x0b,0x30,0x09,0x06,0x03,0x55,0x04,0x0b,0x0c,0x02,0x6e,0x65,0x31,0x0b,0x30,0x09,
+    0x06,0x03,0x55,0x04,0x03,0x0c,0x02,0x6e,0x65,0x31,0x14,0x30,0x12,0x06,0x09,0x2a,
+    0x86,0x48,0x86,0xf7,0x0d,0x01,0x09,0x01,0x16,0x05,0x6e,0x65,0x40,0x6e,0x65,0x30,
+    0x59,0x30,0x13,0x06,0x07,0x2a,0x86,0x48,0xce,0x3d,0x02,0x01,0x06,0x08,0x2a,0x86,
+    0x48,0xce,0x3d,0x03,0x01,0x07,0x03,0x42,0x00,0x04,0xb8,0x4c,0xf9,0x6b,0x9d,0x2d,
+    0x8c,0x39,0x38,0xa4,0x8d,0x65,0x67,0x60,0x87,0x6b,0xd4,0x1b,0x39,0x9c,0x02,0x40,
+    0x0e,0xa7,0x93,0xba,0x69,0x57,0x9a,0xaf,0xe0,0x13,0x07,0xe8,0x41,0xf0,0xc2,0xdd,
+    0x94,0x92,0xff,0xf2,0x62,0xa5,0x79,0x1f,0xaa,0xfc,0x87,0x6d,0xfe,0x9a,0x6b,0xc0,
+    0x22,0x50,0xc0,0x6a,0x41,0xc9,0xa7,0x09,0x2c,0xc5,0xa3,0x81,0xa8,0x30,0x81,0xa5,
+    0x30,0x1d,0x06,0x03,0x55,0x1d,0x0e,0x04,0x16,0x04,0x14,0x62,0xb0,0x97,0x40,0x79,
+    0x26,0x8a,0x40,0x20,0x74,0x72,0xe8,0xd9,0x07,0xd2,0x86,0x6b,0xb7,0x71,0x6e,0x30,
+    0x1f,0x06,0x03,0x55,0x1d,0x23,0x04,0x18,0x30,0x16,0x80,0x14,0x62,0xb0,0x97,0x40,
+    0x79,0x26,0x8a,0x40,0x20,0x74,0x72,0xe8,0xd9,0x07,0xd2,0x86,0x6b,0xb7,0x71,0x6e,
+    0x30,0x0f,0x06,0x03,0x55,0x1d,0x13,0x01,0x01,0xff,0x04,0x05,0x30,0x03,0x01,0x01,
+    0xff,0x30,0x11,0x06,0x03,0x55,0x1d,0x20,0x04,0x0a,0x30,0x08,0x30,0x06,0x06,0x04,
+    0x2a,0x03,0x04,0x05,0x30,0x2c,0x06,0x03,0x55,0x1d,0x11,0x04,0x25,0x30,0x23,0xa0,
+    0x21,0x06,0x0a,0x2b,0x06,0x01,0x04,0x01,0x81,0xae,0x60,0x0a,0x01,0xa0,0x13,0x04,
+    0x11,0x30,0x30,0x2d,0x31,0x34,0x2d,0x32,0x32,0x2d,0x30,0x31,0x2d,0x32,0x33,0x2d,
+    0x34,0x35,0x30,0x11,0x06,0x08,0x2d,0x0a,0x32,0x64,0x64,0x32,0x3d,0x32,0x04,0x05,
+    0x30,0x03,0x02,0x01,0x0a,0x30,0x09,0x06,0x07,0x2a,0x86,0x48,0xce,0x3d,0x04,0x01,
+    0x03,0x48,0x00,0x30,0x45,0x02,0x20,0x59,0x09,0x7a,0xac,0x44,0x71,0x3d,0x24,0x41,
+    0x1a,0x5f,0xa5,0xbb,0xd6,0x38,0x93,0x41,0x66,0x06,0x37,0xca,0x52,0xdd,0x4e,0xfc,
+    0x8e,0xb9,0x54,0xaa,0x94,0xbb,0xf8,0x02,0x21,0x00,0xf9,0xb6,0xc6,0x13,0x18,0x32,
+    0xa6,0x5a,0x72,0x5b,0xdd,0x71,0xc6,0x17,0x0c,0x69,0xa8,0xc0,0xa2,0xd7,0xc4,0x18,
+    0x1d,0x82,0xee,0xe4,0xa1,0x91,0xc2,0x79,0x3b,0x06 
+};                                                        
 
-int8_t *line[512];
+
+//int8_t *line[512];
+int8_t line[512];
 
 /*char *commands[] = {
 	"editbuf role 2",
@@ -307,7 +355,7 @@ typedef elpecc_key ECKEY;
 #endif
 
 EC_KEY *ram_cert_eckey;
-EC_KEY eckey1, eckey2; 
+EC_KEY *eckey1, *eckey2; 
 
 #define KEY_STORE_SIZE 128
 uint8_t auto_serial = 1;
@@ -426,7 +474,8 @@ static void print_key_store(void)
             printf("%5d ", i);
             printf("%6d\t",key_store[i].slot_no);
             hexdumpnl(key_store[i].serialNumber,9);
-            printf("\t%p\t",&(key_store[i].eckey));
+           // printf("\t%p\t",&(key_store[i].eckey));
+            printf("\t%p\t",key_store[i].eckey);
             hexdumpnl(key_store[i].subject,8);printf("\t");
             hexdumpnl(key_store[i].issuer,8);printf("\t");
             hexdumpnl(key_store[i].pubkey,8);printf("\t");
@@ -442,8 +491,8 @@ static void clear_ec_key_store(void)
 {
 }
 
-#ifdef ELLIPTIC
-static int8_t create_new_ec_key_pair(ECKEY *eckey, uint8_t *pubkey)
+#ifdef ELLIPIC
+static int8_t create_new_ec_key_pair(EC_KEY *eckey, uint8_t *pubkey)
 {
     int ret;
     unsigned long outlen = 65;
@@ -467,11 +516,11 @@ static int8_t create_new_ec_key_pair(ECKEY *eckey, uint8_t *pubkey)
     return 0;
 }
 
-static uint8_t sign_cert(CertBuffer *pcert, ECKEY *eckey,
+static uint8_t sign_cert(CertBuffer *pcert, EC_KEY *eckey,
                   uint8_t *pubkey,uint8_t *issuer,
                   uint8_t *authkeyid)
 {
-#define SHA256_DIGEST_LENGTH    (256/8) 
+//#define SHA256_DIGEST_LENGTH    (256/8) 
     uint8_t hash[SHA256_DIGEST_LENGTH];
     uint8_t signature[256],i;
     long unsigned int siglen = 128, hashlen = 256/8;
@@ -523,6 +572,98 @@ static uint8_t sign_cert(CertBuffer *pcert, ECKEY *eckey,
     return 0;
 }
 #endif
+
+uint8_t sign_cert(CertBuffer *pcert, EC_KEY *eckey, uint8_t *pubkey,uint8_t *issuer, uint8_t *authkeyid)
+{
+    //do hash and sign
+    ECDSA_SIG *signature = NULL;
+    uint8_t hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    uint8_t siglen=0;
+    unsigned char temp[72];
+    unsigned char* psig = NULL;
+    int i;
+
+    //update issuer  & AuthKeyID before hash
+    memcpy(pcert->buffer+pcert->dc.issuer.idx, issuer, CERT_ELEMENT_MAXLEN_SUBJECT);
+    memcpy(pcert->buffer+pcert->dc.AuthKeyID.idx, authkeyid, CERT_ELEMENT_MAXLEN_AUTHKEYID);
+
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, pcert->buffer + pcert->dc.tbsCertificate.idx, pcert->dc.tbsCertificate.len);
+    SHA256_Final(hash, &sha256);
+
+    //printf("sign dbg==> hash:");
+    //hexdump(hash, SHA256_DIGEST_LENGTH);
+
+    signature = ECDSA_do_sign(hash, SHA256_DIGEST_LENGTH, eckey);
+    if (signature == NULL)
+    {    
+        printf("Error ECDSA_do_sign()\n");
+        return 1;
+    }    
+
+    for (i = 0; i < KEY_STORE_SIZE; i++){
+        if (!memcmp(pcert->buffer + pcert->dc.serialNumber.idx, key_store[i].serialNumber, CERT_ELEMENT_MAXLEN_SERIALNO)) {
+            memcpy(key_store[i].issuer, issuer, CERT_ELEMENT_MAXLEN_SUBJECT); 
+        }
+    }    
+
+    memset(temp, 0, sizeof(temp));
+    psig = temp;
+    siglen = i2d_ECDSA_SIG(signature,&psig);
+    if (siglen > 0 && siglen <= CERT_ELEMENT_MAXLEN_SIGNATURE ) {
+        memcpy(pcert->buffer + pcert->dc.signatureValue.idx, temp, siglen);
+        pcert->dc.signatureValue.len = siglen;
+        //printf("sign dbg==> siglen %d, signature:",siglen);
+        //hexdump(pcert->buffer + pcert->dc.signatureValue.idx, siglen);
+    }    
+    else{
+        printf("Error coverting to DER form %d.\n",siglen);
+        return 1;
+    }    
+    return 0;
+}
+
+int8_t create_new_ec_key_pair(EC_KEY **eckey, uint8_t *pubkey)
+{
+ const EC_POINT *ecpoint;    
+    EC_GROUP *ecgroup;
+    uint8_t set_group_status;
+    uint8_t gen_status; 
+
+    *eckey = EC_KEY_new();
+    if (*eckey == NULL) {
+        printf("EC_KEY_new() failed\n");
+        return 1;
+    }    
+    ecgroup= EC_GROUP_new_by_curve_name(NID_secp256k1);
+    if (ecgroup == NULL) {
+        printf("EC_GROUP_new_by_curve() failed\n");
+        return 1;
+    }    
+    set_group_status = EC_KEY_set_group(*eckey,ecgroup);
+    if (set_group_status != 1) { 
+        printf("EC_KEY_set_group() failed\n");
+        return 1;
+    }    
+    gen_status = EC_KEY_generate_key(*eckey);
+    if (gen_status != 1) { 
+        printf("EC_KEY_generate_key() failed\n");
+        return 1;
+    }    
+    ram_cert_eckey = *eckey;
+
+    ecpoint = EC_KEY_get0_public_key(*eckey);
+    BN_CTX *ctx= BN_CTX_new();
+    uint8_t pubkey_len = EC_POINT_point2oct(ecgroup,ecpoint, POINT_CONVERSION_UNCOMPRESSED, pubkey,65,ctx);
+
+    if (pubkey_len > ram_cert.dc.subjectPublicKey.len) {
+        printf("pubkey too big.\n");
+        return 1;
+    }    
+
+    return 0;
+}
 
 static void add_keypair_to_store(uint8_t *serialNumber, uint8_t *subject,
                           EC_KEY *eckey,uint8_t *pubkey, uint8_t *subjkeyid )
@@ -830,6 +971,7 @@ static char *get_first_token(char *string)
 
     memcpy(g_strtok_current, string, sizeof(g_strtok_current));
     g_strtok_strptr = string;
+    //retstr = strtok((char *)g_strtok_current," ;");
     retstr = cache_strtok((char *)g_strtok_current," ;");
     if (retstr && strstr(retstr,"\n"))
         strip_last_newline(retstr);
@@ -1017,9 +1159,10 @@ static void check_and_report_result(error_t libret,
     if (    (libret == ERR_OK && expected_result == RESULT_PASS) ||
             (libret == ERR_CACHE_FIND_NO_MATCH &&
              expected_result == RESULT_FAIL) ||
-            (libret == ERR_OK && expected_result == RESULT_PASS) ||
-            (libret != ERR_OK && expected_result == RESULT_FAIL) )
-        report_result("Ok",0,NULL,lc);
+			(libret == ERR_OK && expected_result == RESULT_PASS) ||
+			(libret != ERR_OK && expected_result == RESULT_FAIL) )
+	{ report_result("Ok",0,NULL,lc);
+	}
     else {
         report_result("FAIL",libret,line,lc);
     }
@@ -1107,10 +1250,10 @@ static uint8_t expected_result = RESULT_PASS;
 static error_t libret = ERR_OK;
 static uint8_t done = 0, prompt = 0;
 
-int test_init(int *exit_code)
+/*int test_init(int *exit_code)
 {
     return 0;
-}
+}*/
 
 
 static void process_token(char *token);
@@ -1126,7 +1269,11 @@ int main(int argc,char*argv[])
     //libret = nxp_power_control(1);
 
     //prompt = 0;
-libret = mc_cache_init();
+//OpenSSL_add_all_algorithms();
+//ERR_load_crypto_strings();
+
+	cert_buffer_init();
+libret = cache_init();
     if (libret != ERR_OK) {
         printf("Error initializing cert Cache. error %d\n", libret);
     }    
@@ -1544,10 +1691,11 @@ static void process_token_create(char *token)
 {
     uint8_t pubkey[CERT_ELEMENT_MAXLEN_PUBKEY];
     //create key pair, store in keypair_store and set pubkey of ram_cert
-    create_new_ec_key_pair(&eckey1, pubkey);
+   create_new_ec_key_pair(&eckey1, pubkey);
+   //printf("%d",create_new_ec_key_pair(&eckey1, pubkey));
     add_keypair_to_store(
             (uint8_t *)ram_cert.buffer + ram_cert.dc.serialNumber.idx, 
-            (uint8_t *)ram_cert.buffer + ram_cert.dc.subject.idx, &eckey1,
+            (uint8_t *)ram_cert.buffer + ram_cert.dc.subject.idx, eckey1,
             pubkey, 
             (uint8_t *)ram_cert.buffer + ram_cert.dc.SubjKeyID.idx);
     memcpy(ram_cert.buffer + ram_cert.dc.subjectPublicKey.idx, pubkey,
@@ -1580,9 +1728,11 @@ inline static void print_sign_command_usage(void)
     printf("sign self | (using serial <8-octets>|*<octet>)\n");
 }
 
-EC_KEY signer_key;
 static void process_token_sign(char *token)
 {
+	//EC_KEY *signer_key = EC_KEY_new();
+	EC_KEY *signer_key;
+
     //EC_KEY signer_key;
     uint8_t *signer_pubkey = NULL,*issuer_subjkeyid;
     uint8_t serial[CERT_ELEMENT_MAXLEN_SERIALNO];
@@ -1599,26 +1749,26 @@ static void process_token_sign(char *token)
             {
                 token = get_next_token((char *)line);
                 if (token == NULL){
-                    print_sign_command_usage();
-                    break;
-                }
-                if (!strcmp(token,"serial")){
-                    token = get_next_token((char *)line);
-                    if (token == NULL){
-                        print_sign_command_usage();
-                        break;
-                    }
-                    parse_hexstring(token, &serial, 
-                            CERT_ELEMENT_MAXLEN_SERIALNO);
-                }
-                get_keypair_from_store(serial,&signer_key,
-                            &signer_pubkey,subject);
-                get_subjkeyid_from_store(serial, &issuer_subjkeyid);
-                libret = sign_cert(&ram_cert,&signer_key,signer_pubkey,
-                                    subject,issuer_subjkeyid);
-                if (libret != ERR_OK) {
-                    printf("sign_cert returned Error\n");
-                    break;
+					print_sign_command_usage();
+					break;
+				}
+				if (!strcmp(token,"serial")){
+					token = get_next_token((char *)line);
+					if (token == NULL){
+						print_sign_command_usage();
+						break;
+					}
+					parse_hexstring(token, &serial, 
+							CERT_ELEMENT_MAXLEN_SERIALNO);
+				}
+				get_keypair_from_store(serial, &signer_key,
+						&signer_pubkey,subject);
+				get_subjkeyid_from_store(serial, &issuer_subjkeyid);
+				libret = sign_cert(&ram_cert,signer_key,signer_pubkey,
+						subject,issuer_subjkeyid);
+				if (libret != ERR_OK) {
+					printf("sign_cert returned Error\n");
+					break;
                 }
                 update_issuer_to_store(
                         ram_cert.buffer + ram_cert.dc.serialNumber.idx,
@@ -1648,8 +1798,6 @@ static void process_token_sign(char *token)
     }
 }
 
-//EC_KEY signer_key;
-EC_KEY eckey;
 static void process_token_addmany(char *token)
 {
     uint16_t range;
@@ -1657,9 +1805,11 @@ static void process_token_addmany(char *token)
     uint8_t serial[CERT_ELEMENT_MAXLEN_SERIALNO];
     uint8_t issuer[CERT_ELEMENT_MAXLEN_ISSUER];
     uint8_t subject[CERT_ELEMENT_MAXLEN_ISSUER];
-    //EC_KEY signer_key;
     uint8_t *signer_pubkey = NULL,*issuer_subjkeyid;	
     uint8_t nl = 1,i; 
+
+    EC_KEY *signer_key = EC_KEY_new();
+	EC_KEY *eckey = EC_KEY_new();
 
     token = get_next_token((char *)line);
     str_to_byte(token,(uint8_t *)&range);
@@ -1714,14 +1864,14 @@ static void process_token_addmany(char *token)
                 add_keypair_to_store(
                     (uint8_t *)ram_cert.buffer + ram_cert.dc.serialNumber.idx,
                     (uint8_t *)ram_cert.buffer + ram_cert.dc.subject.idx,
-                    &eckey, pubkey,
+                    eckey, pubkey,
                     (uint8_t *)ram_cert.buffer + ram_cert.dc.SubjKeyID.idx);
                 memcpy(ram_cert.buffer + ram_cert.dc.subjectPublicKey.idx,
                     pubkey, CERT_ELEMENT_MAXLEN_PUBKEY);
                 get_keypair_from_store(serial,&signer_key,
                     &signer_pubkey,subject);
                 get_subjkeyid_from_store(serial, &issuer_subjkeyid);
-                libret = sign_cert(&ram_cert,&signer_key,signer_pubkey,
+                libret = sign_cert(&ram_cert,signer_key,signer_pubkey,
                     subject,issuer_subjkeyid);
                 if (libret != ERR_OK) {
                     printf("sign_cert returned Error\n");

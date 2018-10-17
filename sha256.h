@@ -6,7 +6,7 @@
  */
 #ifndef __D_SHA256_H__
 #define __D_SHA256_H__
-
+#include<stdint.h>
 #ifdef __cplusplus
     extern "C" {
 #endif
